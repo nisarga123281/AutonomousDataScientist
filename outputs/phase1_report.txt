@@ -1,0 +1,60 @@
+==================================================
+PHASE 1 - DATA UNDERSTANDING REPORT
+==================================================
+
+DATASET OVERVIEW
+----------------
+- File Path: data/sample.csv
+- Dataset Size: 6 rows, 4 columns
+- Columns: Name, Age, Salary, Department
+- Data Structure: The dataset contains employee-level data comprising personal identifiers, demographic attributes, financial compensation, and departmental classification.
+
+NUMERICAL COLUMNS
+-----------------
+- Age (int64): Numerical discrete variable representing employee age. Contains 5 unique values across 6 records.
+- Salary (float64): Numerical continuous variable representing employee salary. Contains 4 unique values across 5 non-null records.
+
+CATEGORICAL COLUMNS
+-------------------
+- Name (str): Text identifier representing employee full or first names. Contains 5 unique values across 6 records.
+- Department (str): Categorical text attribute indicating the business department or team. Contains 3 unique values across 6 records.
+
+DATA QUALITY
+------------
+- Missing Values: 1 missing value found in the 'Salary' column (16.67% missing rate for Salary; 1 total missing value across the entire dataset).
+- Duplicate Rows: 1 duplicate row detected (16.67% of total records).
+- Constant Columns: None detected. All columns demonstrate variability.
+
+STATISTICS
+----------
+- Age:
+  - Mean: 26.83
+  - Median: 26.50
+  - Minimum: 24.00
+  - Maximum: 30.00
+  - Standard Deviation: 2.48
+- Salary:
+  - Mean: $44,000.00
+  - Median: $45,000.00
+  - Minimum: $35,000.00
+  - Maximum: $55,000.00
+  - Standard Deviation: $8,944.27
+
+KEY FINDINGS
+------------
+1. Small Dataset Size: The dataset is very small, consisting of only 6 rows and 4 features.
+2. Data Redundancy: The presence of 1 exact duplicate row reduces the count of unique employee entries from 6 to 5.
+3. Missing Financial Data: 1 record is missing a value in the 'Salary' feature.
+4. Homogeneous Age Distribution: The workforce sample is young and narrowly distributed between ages 24 and 30 (mean 26.83 years).
+5. Salary Spread: Salaries range from $35,000 to $55,000 with moderate variance relative to the mean.
+
+RECOMMENDATIONS
+---------------
+1. Deduplication: Identify and drop the duplicate row during data preprocessing.
+2. Missing Value Imputation: Handle the single missing 'Salary' entry, either via mean/median imputation (e.g., median of $45,000 or department-based median) or by dropping the row if deemed redundant.
+3. Type Casting & Cleaning: Ensure nominal string identifiers (e.g., 'Name') are handled properly or excluded from statistical modeling algorithms.
+4. Expand Data Collection: If feasible, collect additional records to improve overall statistical power and sample representation.
+
+==================================================
+END OF PHASE 1
+==================================================

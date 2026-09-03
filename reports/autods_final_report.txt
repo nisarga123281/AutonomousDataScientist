@@ -1,0 +1,138 @@
+
+============================================================
+AUTODS - FINAL DATA SCIENCE REPORT
+============================================================
+
+DATASET UPLOAD
+--------------
+The uploaded dataset was accepted and passed to the AutoDS pipeline.
+
+
+1. EXECUTIVE SUMMARY
+--------------------
+The AutoDS pipeline profiled, cleaned, explored, modeled and visualized the uploaded dataset, then consolidated the findings into this report.
+
+
+2. PROBLEM STATEMENT
+--------------------
+The analysis evaluates dataset quality, relationships between variables, predictive performance and actionable findings using the uploaded data.
+
+
+3. DATASET OVERVIEW
+-------------------
+Rows: 119
+Columns: 2
+Columns: ['Experience', 'Salary']
+
+
+4. DATA QUALITY ASSESSMENT
+------------
+Missing Values: 0
+Duplicate Rows: 0
+
+
+5. DATA CLEANING
+--------
+Original Rows: 120
+Cleaned Rows: 119
+Duplicates Removed: 1
+
+
+6. EXPLORATORY DATA ANALYSIS
+-------------------------
+Numerical Columns:
+['Experience', 'Salary']
+
+Categorical Columns:
+[]
+
+Statistics:
+Experience: mean=5.789915966386555, median=5.8, minimum=1.1, maximum=10.0, standard deviation=2.5406323434812275
+Salary: mean=9.124033613445379, median=8.25, minimum=2.22, maximum=19.87, standard deviation=5.169212856729988
+
+Correlation:
+Experience: Experience=1.0, Salary=0.9751
+Salary: Experience=0.9751, Salary=1.0
+
+
+8. BEST MODEL
+--------
+Algorithm:
+Linear Regression
+
+Feature:
+Experience
+
+Target:
+Salary
+
+Training Rows:
+95
+
+Testing Rows:
+24
+
+MAE:
+0.9914939878132228
+
+RMSE:
+1.1807813682562762
+
+R2 Score:
+0.9521878040458659
+
+
+9. MODEL EVALUATION
+-------------------
+MAE: 0.9914939878132228
+RMSE: 1.1807813682562762
+R2 Score: 0.9521878040458659
+
+
+7. VISUALIZATION INSIGHTS
+-------------
+Library: Plotly
+Plots Generated: 6
+
+
+10. KEY DATA INSIGHTS
+-----------
+- The dataset contains no missing values.
+- No duplicate rows were found.
+- Correlation between Experience and Salary is 0.9751.
+- There is a strong positive relationship between the first two numerical variables.
+- A Linear Regression model was trained using the first numerical column to predict the second.
+- Plotly visualizations were generated for distributions, relationships, correlations and outliers.
+
+
+11. BUSINESS RECOMMENDATIONS
+---------------
+- Validate the model using unseen data.
+- Perform cross-validation.
+- Compare multiple ML algorithms.
+- Add useful features.
+- Monitor model performance.
+- Analyze generated visualizations.
+
+
+12. LIMITATIONS
+---------------
+The modeling result uses the available numerical columns and a single train/test split. Results should be interpreted within the scope and quality of the uploaded dataset.
+
+
+13. FUTURE IMPROVEMENTS
+-----------------------
+- Compare additional model families.
+- Use cross-validation and broader feature engineering.
+- Validate recommendations with domain knowledge and new data.
+
+
+14. CONCLUSION
+----------------
+The AutoDS system successfully processed the dataset
+through profiling, cleaning, EDA, modeling,
+visualization, AI insights and report generation.
+
+============================================================
+END OF REPORT
+============================================================
