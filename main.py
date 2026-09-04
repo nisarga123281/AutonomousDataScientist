@@ -3,7 +3,7 @@ from pathlib import Path
 from groq import Groq
 import os
 from reportlab.lib.pagesizes import A4
-
+from autods_graph import build_autods_graph
 from dotenv import load_dotenv
 
 load_dotenv()
@@ -1663,6 +1663,660 @@ def download_report():
         media_type="application/pdf",
         filename="AUTODS_Final_Report.pdf",
     )
+
+# ============================================================
+# LANGGRAPH STAGE NODES
+# ============================================================
+
+def profiling_node(state):
+    """
+    LangGraph node for dataset profiling.
+    Uses the same profiling logic as the existing pipeline.
+    """
+
+    input_file = Path(state["input_file"])
+
+    df = pd.read_csv(input_file)
+
+    numerical_columns = (
+        df.select_dtypes(include=np.number)
+        .columns
+        .tolist()
+    )
+
+    categorical_columns = (
+        df.select_dtypes(exclude=np.number)
+        .columns
+        .tolist()
+    )
+
+    result = {
+        "rows": len(df),
+        "columns": len(df.columns),
+        "column_names": df.columns.tolist(),
+        "data_types": {
+            column: str(dtype)
+            for column, dtype in df.dtypes.items()
+        },
+        "missing_values": {
+            column: int(value)
+            for column, value in df.isnull().sum().items()
+        },
+        "duplicate_rows": int(df.duplicated().sum()),
+        "numerical_columns": numerical_columns,
+        "categorical_columns": categorical_columns
+    }
+
+    workflow_state["profiling_result"] = result
+
+    return {
+        "df": df,
+        "profiling_result": result
+    }
+
+
+def cleaning_node(state):
+    """
+    LangGraph node for data cleaning.
+    """
+
+    df = state["df"].copy()
+
+    original_file = Path(state["input_file"])
+
+    original_rows = len(df)
+
+    duplicates_removed = int(
+        df.duplicated().sum()
+    )
+
+    missing_before = int(
+        df.isnull().sum().sum()
+    )
+
+    df = df.drop_duplicates()
+
+    for column in df.columns:
+
+        if pd.api.types.is_numeric_dtype(
+            df[column]
+        ):
+
+            df[column] = df[column].fillna(
+                df[column].median()
+            )
+
+        else:
+
+            mode = df[column].mode()
+
+            if len(mode) > 0:
+                df[column] = df[column].fillna(
+                    mode[0]
+                )
+
+    missing_after = int(
+        df.isnull().sum().sum()
+    )
+
+    cleaned_file = (
+        DATA_DIR /
+        f"{original_file.stem}_cleaned.csv"
+    )
+
+    df.to_csv(
+        cleaned_file,
+        index=False
+    )
+
+    workflow_state["cleaned_file"] = str(
+        cleaned_file
+    )
+
+    cleaning_result = {
+        "original_rows": original_rows,
+        "cleaned_rows": len(df),
+        "duplicates_removed": duplicates_removed,
+        "missing_values_before": missing_before,
+        "missing_values_after": missing_after
+    }
+
+    workflow_state["cleaning_result"] = (
+        cleaning_result
+    )
+
+    return {
+        "df": df,
+        "cleaned_file": str(cleaned_file),
+        "cleaning_result": cleaning_result
+    }
+
+
+def eda_node(state):
+    """
+    LangGraph node for exploratory data analysis.
+    """
+
+    df = state["df"]
+
+    numerical_columns = (
+        df.select_dtypes(include=np.number)
+        .columns
+        .tolist()
+    )
+
+    categorical_columns = (
+        df.select_dtypes(exclude=np.number)
+        .columns
+        .tolist()
+    )
+
+    statistics = {}
+
+    for column in numerical_columns:
+
+        statistics[column] = {
+            "mean": float(
+                df[column].mean()
+            ),
+            "median": float(
+                df[column].median()
+            ),
+            "minimum": float(
+                df[column].min()
+            ),
+            "maximum": float(
+                df[column].max()
+            ),
+            "standard_deviation": float(
+                df[column].std()
+            )
+        }
+
+    correlation = {}
+
+    if len(numerical_columns) >= 2:
+
+        correlation = (
+            df[numerical_columns]
+            .corr()
+            .round(4)
+            .to_dict()
+        )
+
+    eda_result = {
+        "rows": len(df),
+        "columns": len(df.columns),
+        "column_names": df.columns.tolist(),
+        "numerical_columns": numerical_columns,
+        "categorical_columns": categorical_columns,
+        "missing_values": {
+            column: int(value)
+            for column, value in df.isnull().sum().items()
+        },
+        "unique_values": {
+            column: int(
+                df[column].nunique()
+            )
+            for column in df.columns
+        },
+        "statistics": statistics,
+        "correlation": correlation
+    }
+
+    workflow_state["eda_result"] = eda_result
+
+    return {
+        "eda_result": eda_result
+    }
+
+
+def modeling_node(state):
+    """
+    LangGraph node for machine-learning modeling.
+    """
+
+    df = state["df"]
+
+    numerical_columns = (
+        df.select_dtypes(include=np.number)
+        .columns
+        .tolist()
+    )
+
+    if len(numerical_columns) < 2:
+
+        workflow_state["modeling_result"] = None
+
+        return {
+            "modeling_result": None
+        }
+
+    feature = numerical_columns[0]
+    target = numerical_columns[1]
+
+    X = df[[feature]]
+    y = df[target]
+
+    X_train, X_test, y_train, y_test = (
+        train_test_split(
+            X,
+            y,
+            test_size=0.20,
+            random_state=42
+        )
+    )
+
+    model = LinearRegression()
+
+    model.fit(
+        X_train,
+        y_train
+    )
+
+    predictions = model.predict(
+        X_test
+    )
+
+    mae = mean_absolute_error(
+        y_test,
+        predictions
+    )
+
+    rmse = np.sqrt(
+        mean_squared_error(
+            y_test,
+            predictions
+        )
+    )
+
+    r2 = r2_score(
+        y_test,
+        predictions
+    )
+
+    result = {
+        "algorithm": "Linear Regression",
+        "feature": feature,
+        "target": target,
+        "training_rows": len(X_train),
+        "testing_rows": len(X_test),
+        "mae": float(mae),
+        "rmse": float(rmse),
+        "r2_score": float(r2),
+        "coefficient": float(
+            model.coef_[0]
+        ),
+        "intercept": float(
+            model.intercept_
+        )
+    }
+
+    workflow_state["modeling_result"] = result
+
+    return {
+        "modeling_result": result
+    }
+
+
+def visualization_node(state):
+    """
+    LangGraph node for Plotly visualizations.
+    """
+
+    df = state["df"]
+
+    numerical_columns = (
+        df.select_dtypes(include=np.number)
+        .columns
+        .tolist()
+    )
+
+    categorical_columns = (
+        df.select_dtypes(exclude=np.number)
+        .columns
+        .tolist()
+    )
+
+    generated_plots = []
+
+    # Histograms
+    for column in numerical_columns:
+
+        fig = px.histogram(
+            df,
+            x=column,
+            title=f"Distribution of {column}",
+            marginal="box",
+            nbins=30
+        )
+
+        fig.update_layout(
+            template="plotly_white"
+        )
+
+        filename = (
+            f"{column.lower()}_histogram.html"
+        )
+
+        filepath = (
+            VISUALIZATION_DIR /
+            filename
+        )
+
+        fig.write_html(
+            str(filepath)
+        )
+
+        generated_plots.append({
+            "type": "histogram",
+            "name": filename,
+            "url": f"/visualizations/{filename}"
+        })
+
+    # Scatter
+    if len(numerical_columns) >= 2:
+
+        x_column = numerical_columns[0]
+        y_column = numerical_columns[1]
+
+        fig = px.scatter(
+            df,
+            x=x_column,
+            y=y_column,
+            title=f"{y_column} vs {x_column}"
+        )
+
+        fig.update_layout(
+            template="plotly_white"
+        )
+
+        filename = (
+            f"{x_column.lower()}_vs_"
+            f"{y_column.lower()}.html"
+        )
+
+        filepath = (
+            VISUALIZATION_DIR /
+            filename
+        )
+
+        fig.write_html(
+            str(filepath)
+        )
+
+        generated_plots.append({
+            "type": "scatter",
+            "name": filename,
+            "url": f"/visualizations/{filename}"
+        })
+
+    # Heatmap
+    if len(numerical_columns) >= 2:
+
+        correlation = (
+            df[numerical_columns]
+            .corr()
+        )
+
+        fig = px.imshow(
+            correlation,
+            text_auto=True,
+            title="Correlation Heatmap",
+            aspect="auto"
+        )
+
+        fig.update_layout(
+            template="plotly_white"
+        )
+
+        filename = "correlation_heatmap.html"
+
+        filepath = (
+            VISUALIZATION_DIR /
+            filename
+        )
+
+        fig.write_html(
+            str(filepath)
+        )
+
+        generated_plots.append({
+            "type": "heatmap",
+            "name": filename,
+            "url": f"/visualizations/{filename}"
+        })
+
+    # Boxplots
+    for column in numerical_columns:
+
+        fig = px.box(
+            df,
+            y=column,
+            title=f"Box Plot - {column}"
+        )
+
+        fig.update_layout(
+            template="plotly_white"
+        )
+
+        filename = (
+            f"{column.lower()}_boxplot.html"
+        )
+
+        filepath = (
+            VISUALIZATION_DIR /
+            filename
+        )
+
+        fig.write_html(
+            str(filepath)
+        )
+
+        generated_plots.append({
+            "type": "boxplot",
+            "name": filename,
+            "url": f"/visualizations/{filename}"
+        })
+
+    # Categorical charts
+    for column in categorical_columns:
+
+        if df[column].nunique() <= 30:
+
+            counts = (
+                df[column]
+                .value_counts()
+                .reset_index()
+            )
+
+            counts.columns = [
+                column,
+                "Count"
+            ]
+
+            fig = px.bar(
+                counts,
+                x=column,
+                y="Count",
+                title=f"Distribution of {column}"
+            )
+
+            fig.update_layout(
+                template="plotly_white"
+            )
+
+            filename = (
+                f"{column.lower()}_bar_chart.html"
+            )
+
+            filepath = (
+                VISUALIZATION_DIR /
+                filename
+            )
+
+            fig.write_html(
+                str(filepath)
+            )
+
+            generated_plots.append({
+                "type": "bar_chart",
+                "name": filename,
+                "url": f"/visualizations/{filename}"
+            })
+
+    visualization_result = {
+        "library": "Plotly",
+        "plots_generated": len(
+            generated_plots
+        ),
+        "generated_plots": generated_plots
+    }
+
+    workflow_state[
+        "visualization_result"
+    ] = visualization_result
+
+    return {
+        "visualization_result":
+            visualization_result
+    }
+
+
+def insights_node(state):
+    """
+    LangGraph node for AUTODS insights.
+    """
+
+    df = state["df"]
+
+    numerical_columns = (
+        df.select_dtypes(include=np.number)
+        .columns
+        .tolist()
+    )
+
+    observations = []
+
+    missing_values = int(
+        df.isnull().sum().sum()
+    )
+
+    duplicate_rows = int(
+        df.duplicated().sum()
+    )
+
+    if missing_values == 0:
+
+        observations.append(
+            "The dataset contains no missing values."
+        )
+
+    else:
+
+        observations.append(
+            f"The dataset contains "
+            f"{missing_values} missing values."
+        )
+
+    if duplicate_rows == 0:
+
+        observations.append(
+            "No duplicate rows were found."
+        )
+
+    else:
+
+        observations.append(
+            f"The dataset contains "
+            f"{duplicate_rows} duplicate rows."
+        )
+
+    correlation_value = None
+
+    if len(numerical_columns) >= 2:
+
+        correlation_value = float(
+            df[numerical_columns]
+            .corr()
+            .iloc[0, 1]
+        )
+
+        first = numerical_columns[0]
+        second = numerical_columns[1]
+
+        observations.append(
+            f"Correlation between "
+            f"{first} and {second} "
+            f"is {correlation_value:.4f}."
+        )
+
+        if correlation_value > 0.7:
+
+            observations.append(
+                "The first two numerical variables "
+                "have a strong positive relationship."
+            )
+
+        elif correlation_value < -0.7:
+
+            observations.append(
+                "The first two numerical variables "
+                "have a strong negative relationship."
+            )
+
+        else:
+
+            observations.append(
+                "The first two numerical variables "
+                "have a relatively weak relationship."
+            )
+
+    if workflow_state["modeling_result"] is not None:
+
+        observations.append(
+            "A Linear Regression model was trained "
+            "using the first numerical column "
+            "to predict the second."
+        )
+
+    observations.append(
+        "Plotly visualizations were generated "
+        "for distributions, relationships, "
+        "correlations and outliers."
+    )
+
+    insights_result = {
+        "observations": observations,
+        "missing_values": missing_values,
+        "duplicate_rows": duplicate_rows,
+        "correlation": correlation_value
+    }
+
+    workflow_state[
+        "insights_result"
+    ] = insights_result
+
+    return {
+        "insights_result": insights_result
+    }
+
+
+def report_node(state):
+    """
+    LangGraph node for final report generation.
+
+    Uses the existing report endpoint logic.
+    """
+
+    # The existing final_report() function already
+    # generates the canonical report and stores it.
+    final_report()
+
+    return {
+        "final_report":
+            workflow_state.get("final_report")
+    }
 # ============================================================
 # PHASE 8 - AUTONOMOUS ORCHESTRATOR
 # ============================================================
@@ -2722,4 +3376,308 @@ Rules:
                 raise HTTPException(
                     status_code=500,
                     detail=f"LLM request failed: {str(e)}"
+          ) 
+
+# ============================================================
+# LANGGRAPH ORCHESTRATION
+# ============================================================
+# This orchestration layer is intentionally separate from the
+# existing phase endpoints so the existing frontend/API output
+# remains unchanged.
+#
+# It uses the same stage functions already present in main.py.
+# To switch the existing autonomous endpoint to this graph,
+# replace its body with the helper below after verifying the
+# graph-backed endpoint works.
+
+try:
+    from typing import TypedDict, Any
+    from langgraph.graph import StateGraph, END
+
+    class AutoDSGraphState(TypedDict, total=False):
+        input_file: str
+        df: Any
+        profiling_result: Any
+        cleaning_result: Any
+        eda_result: Any
+        modeling_result: Any
+        visualization_result: Any
+        insights_result: Any
+        final_report: Any
+
+    def _graph_profiling(state: AutoDSGraphState):
+        return profiling_node(state)
+
+    def _graph_cleaning(state: AutoDSGraphState):
+        return cleaning_node(state)
+
+    def _graph_eda(state: AutoDSGraphState):
+        return eda_node(state)
+
+    def _graph_modeling(state: AutoDSGraphState):
+        return modeling_node(state)
+
+    def _graph_visualization(state: AutoDSGraphState):
+        return visualization_node(state)
+
+    def _graph_insights(state: AutoDSGraphState):
+        return insights_node(state)
+
+    def _graph_report(state: AutoDSGraphState):
+        return report_node(state)
+
+    def create_autods_graph():
+        graph = StateGraph(AutoDSGraphState)
+
+        graph.add_node("profiling", _graph_profiling)
+        graph.add_node("cleaning", _graph_cleaning)
+        graph.add_node("eda", _graph_eda)
+        graph.add_node("modeling", _graph_modeling)
+        graph.add_node("visualization", _graph_visualization)
+        graph.add_node("insights", _graph_insights)
+        graph.add_node("report", _graph_report)
+
+        graph.set_entry_point("profiling")
+
+        graph.add_edge("profiling", "cleaning")
+        graph.add_edge("cleaning", "eda")
+        graph.add_edge("eda", "modeling")
+        graph.add_edge("modeling", "visualization")
+        graph.add_edge("visualization", "insights")
+        graph.add_edge("insights", "report")
+        graph.add_edge("report", END)
+
+        return graph.compile()
+
+except ImportError:
+    AutoDSGraphState = None
+
+    def create_autods_graph():
+        raise RuntimeError(
+            "LangGraph is not installed. Run: pip install langgraph"
+        )
+
+
+@app.post("/api/autods/run-langgraph")
+async def run_autods_langgraph(file: UploadFile = File(...)):
+    """
+    LangGraph-backed AUTODS pipeline.
+
+    This endpoint intentionally has a separate URL first, so the
+    existing /api/autods/run endpoint and frontend are not changed
+    until the graph-backed workflow has been verified.
+    """
+
+    if not file.filename.lower().endswith(".csv"):
+        raise HTTPException(
+            status_code=400,
+            detail="Only CSV files are supported."
+        )
+
+    original_file = DATA_DIR / file.filename
+
+    with open(original_file, "wb") as buffer:
+        shutil.copyfileobj(file.file, buffer)
+
+    # Reset per-run state while preserving the same global-state design.
+    workflow_state.update({
+        "input_file": str(original_file),
+        "cleaned_file": None,
+        "profiling_result": None,
+        "cleaning_result": None,
+        "eda_result": None,
+        "modeling_result": None,
+        "visualization_result": None,
+        "insights_result": None,
+        "final_report": None
+    })
+
+    graph = create_autods_graph()
+
+    result = graph.invoke({
+        "input_file": str(original_file)
+    })
+
+    profiling_result = result.get("profiling_result") or {}
+    cleaning_result = result.get("cleaning_result") or {}
+    eda_result = result.get("eda_result") or {}
+    modeling_result = result.get("modeling_result")
+    visualization_result = result.get("visualization_result") or {}
+    insights_result = result.get("insights_result") or {}
+    report = result.get("final_report") or ""
+
+    observations = insights_result.get("observations") or []
+
+    correlation_value = insights_result.get("correlation")
+
+    return {
+        "status": "success",
+        "workflow_status": "completed",
+        "message": "AutoDS pipeline completed successfully.",
+        "filename": original_file.name,
+        "orchestration": "LangGraph",
+        "phase1": {
+            **build_agent_payload(
+                "profiling",
+                result=profiling_result,
+                summary=build_profiling_summary(profiling_result),
+                metrics={
+                    "rows": profiling_result.get("rows"),
+                    "columns": profiling_result.get("columns"),
+                    "duplicate_rows": profiling_result.get("duplicate_rows"),
+                    "missing_values": sum(
+                        int(v)
+                        for v in (
+                            profiling_result.get("missing_values") or {}
+                        ).values()
+                    )
+                },
+                warnings=(
+                    []
+                    if int(profiling_result.get("duplicate_rows") or 0) == 0
+                    else ["Duplicate rows were detected and should be reviewed before modeling."]
+                ),
+                recommendations=(
+                    ["Review duplicate records before modeling."]
+                    if int(profiling_result.get("duplicate_rows") or 0) > 0
+                    else ["Proceed to cleaning and EDA to validate data quality."]
                 )
+            ),
+            "status": "completed"
+        },
+        "phase2": {
+            **build_agent_payload(
+                "cleaning",
+                result=cleaning_result,
+                summary=(
+                    "The dataset was cleaned by removing duplicate rows "
+                    "and handling missing values before downstream analysis."
+                ),
+                metrics={
+                    "original_rows": cleaning_result.get("original_rows"),
+                    "cleaned_rows": cleaning_result.get("cleaned_rows"),
+                    "duplicates_removed": cleaning_result.get("duplicates_removed"),
+                    "missing_values_before": cleaning_result.get("missing_values_before"),
+                    "missing_values_after": cleaning_result.get("missing_values_after")
+                },
+                warnings=[],
+                recommendations=[]
+            ),
+            "status": "completed"
+        },
+        "phase3": {
+            **build_agent_payload(
+                "eda",
+                result=eda_result,
+                summary=(
+                    "Descriptive statistics, distributions and numerical "
+                    "relationships were calculated for the cleaned dataset."
+                ),
+                metrics={
+                    "rows": eda_result.get("rows"),
+                    "columns": eda_result.get("columns"),
+                    "numerical_columns": len(
+                        eda_result.get("numerical_columns") or []
+                    ),
+                    "categorical_columns": len(
+                        eda_result.get("categorical_columns") or []
+                    )
+                },
+                warnings=[],
+                recommendations=[]
+            ),
+            "status": "completed"
+        },
+        "phase4": {
+            **build_agent_payload(
+                "modeling",
+                result=modeling_result or {},
+                summary=(
+                    f"{modeling_result.get('algorithm')} was trained and "
+                    f"evaluated on held-out data."
+                    if modeling_result
+                    else "Modeling was skipped because at least two numerical columns were not available."
+                ),
+                metrics={
+                    "algorithm": (
+                        modeling_result.get("algorithm")
+                        if modeling_result else "N/A"
+                    ),
+                    "r2_score": (
+                        modeling_result.get("r2_score")
+                        if modeling_result else None
+                    ),
+                    "mae": (
+                        modeling_result.get("mae")
+                        if modeling_result else None
+                    ),
+                    "rmse": (
+                        modeling_result.get("rmse")
+                        if modeling_result else None
+                    )
+                },
+                warnings=[],
+                recommendations=[]
+            ),
+            "status": "completed"
+        },
+        "phase5": {
+            **build_agent_payload(
+                "visualization",
+                result=visualization_result,
+                summary=(
+                    f"{visualization_result.get('plots_generated', 0)} "
+                    "Plotly visualizations were generated from the analyzed data."
+                ),
+                metrics={
+                    "plots_generated": visualization_result.get("plots_generated", 0),
+                    "library": visualization_result.get("library", "Plotly")
+                },
+                warnings=[],
+                recommendations=[]
+            ),
+            "status": "completed"
+        },
+        "phase6": {
+            **build_agent_payload(
+                "insights",
+                result={
+                    "insights": observations,
+                    "correlation": correlation_value,
+                    "missing_values": insights_result.get("missing_values"),
+                    "duplicate_rows": insights_result.get("duplicate_rows")
+                },
+                summary=(
+                    f"{len(observations)} data-driven observations were generated "
+                    "from the completed analysis."
+                ),
+                metrics={
+                    "observations": len(observations),
+                    "correlation": correlation_value,
+                    "missing_values": insights_result.get("missing_values"),
+                    "duplicate_rows": insights_result.get("duplicate_rows")
+                },
+                warnings=[],
+                recommendations=[]
+            ),
+            "status": "completed"
+        },
+        "phase7": {
+            **build_agent_payload(
+                "report",
+                result={
+                    "summary": "The complete AUTODS report has been generated.",
+                    "report": report,
+                    "report_file": "/reports/autods_final_report.txt"
+                },
+                summary="The completed analysis was consolidated into the final AUTODS report.",
+                metrics={
+                    "report_generated": bool(report),
+                    "report_file": "/reports/autods_final_report.txt"
+                },
+                warnings=[],
+                recommendations=[]
+            ),
+            "status": "completed"
+        }
+    }
